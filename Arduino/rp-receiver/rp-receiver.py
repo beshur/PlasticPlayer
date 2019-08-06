@@ -29,12 +29,12 @@ class WiFi(object):
 
     def connect(self):
       cell = Cell.where("wlan0", lambda cell: cell.ssid.lower() == self.ssid.lower())
-      if cell.ssid is None:
+      if cell[0].ssid is None:
         print "Wi-Fi not found: " + self.ssid
         sendToSerial("error&wifi&" + self.errors.NOT_FOUND)
         return
       passkey = self.password or None
-      scheme = Scheme.for_cell('wlan0', 'home', cell, passkey)
+      scheme = Scheme.for_cell('wlan0', 'home', cell[0], passkey)
       scheme.save()
       scheme.activate()
 
