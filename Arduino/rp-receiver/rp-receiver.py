@@ -8,8 +8,9 @@
 import serial
 import io
 import os
+import requests
+import urllib
 from wifi import Cell, Scheme
-from airtable import Airtable
 
 SERIAL_PORT = "/dev/ttyUSB0"
 
@@ -51,16 +52,35 @@ class WiFi(object):
 # Airtable provider
 ###
 class TrackLookup(object):
-  at = ""
+  apiKey = ""
+  baseId = ""
   def __init__(self):
+    self.apiKey = os.environ["AIRTABLE_API_KEY"]
+    self.baseId = os.environ["AIRTABLE_BASE_ID"]
     print("TrackLookup start")
-    self.at = Airtable(os.environ["AIRTABLE_BASE_ID"], "")
 
   def find(self, id):
     print("TrackLookup find: " + id)
-    allRecords = self.at.get_all("viw3BQcg0Pdt9NCWK")
-    # records = allRecords.search('id', id)
-    print(allRecords)
+    headers = {
+        'authorization': "Bearer " + self.apiKey,
+        'content-type': "application/json",
+    }
+
+    result = {}
+    getUri = 'https://api.airtable.com/v0/' + self.baseId + '/records?filterByFormula=%7BnfcId%7D%3D\'' + urllib.quote_plus(id) + '\''
+    print(getUri)
+    try:
+      response = requests.get(getUri, headers=headers, allow_redirects=False)
+      # if init_res.status_code == 200:
+      result = response.json()
+
+    except Exception as ce:
+      print(ce)
+
+    print(result)
+    print(result["records"][0]["fields"]["uri"])
+
+    return result
 
 
 class Commands(object):
@@ -90,7 +110,7 @@ class Commands(object):
   # play card to start track lookup
   def play(self, args):
     trackLookup = TrackLookup()
-    trackLookup.find(args[0])
+    trackLookup.find(args[0].replace('\n', ''))
 
 
 ###
