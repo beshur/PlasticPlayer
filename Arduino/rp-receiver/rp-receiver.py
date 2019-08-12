@@ -10,6 +10,8 @@ import io
 import os
 import requests
 import urllib
+import subprocess
+from mopidy_json_client import MopidyClient
 from wifi import Cell, Scheme
 
 SERIAL_PORT = "/dev/ttyUSB0"
@@ -66,21 +68,43 @@ class TrackLookup(object):
         'content-type': "application/json",
     }
 
-    result = {}
+    result = ""
+    resp = {}
     getUri = 'https://api.airtable.com/v0/' + self.baseId + '/records?filterByFormula=%7BnfcId%7D%3D\'' + urllib.quote_plus(id) + '\''
     print(getUri)
     try:
       response = requests.get(getUri, headers=headers, allow_redirects=False)
       # if init_res.status_code == 200:
-      result = response.json()
+      resp = response.json()
 
     except Exception as ce:
       print(ce)
 
-    print(result)
-    print(result["records"][0]["fields"]["uri"])
+    print(resp)
+
+    try:
+      result = resp["records"][0]["fields"]["uri"]
+    except Exception as ec:
+      print(ce)
 
     return result
+
+class PlayBack(object):
+  mopidy = {}
+  def __init__(self):
+    print("PlayBack start")
+    self.mopidy = MopidyClient()
+    self.mopidy.bind_event('track_playback_started', self.print_track_info)
+
+  def print_track_info(self, data):
+    print("track info:")
+    print(data)
+
+  def play(self, uri):
+    print(uri)
+    subprocess.check_call(['mpc', 'clear'])
+    subprocess.check_call(['mpc', 'add', uri])
+    subprocess.check_call(['mpc', 'play'])
 
 
 class Commands(object):
@@ -110,7 +134,10 @@ class Commands(object):
   # play card to start track lookup
   def play(self, args):
     trackLookup = TrackLookup()
-    trackLookup.find(args[0].replace('\n', ''))
+    playBack = PlayBack()
+    nfcCardId = args[0].replace('\n', '').replace(' ', ':')
+    track = trackLookup.find(nfcCardId)
+    playBack.play(track)
 
 
 ###
