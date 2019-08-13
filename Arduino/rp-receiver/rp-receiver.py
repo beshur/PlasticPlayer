@@ -10,8 +10,10 @@ import io
 import os
 import requests
 import urllib
-import subprocess
-from mopidy_json_client import MopidyClient
+import websocket
+import threading
+import json
+import pprint
 from wifi import Cell, Scheme
 
 SERIAL_PORT = "/dev/ttyUSB0"
@@ -84,34 +86,98 @@ class TrackLookup(object):
 
     try:
       result = resp["records"][0]["fields"]["uri"]
-    except Exception as ec:
+    except Exception as ce:
       print(ce)
 
     return result
 
 class PlayBack(object):
-  mopidy = {}
-  def __init__(self):
-    print("PlayBack start")
-    self.mopidy = MopidyClient()
-    self.mopidy.bind_event('track_playback_started', self.print_track_info)
+  ws = {}
+  wst = {}
+  talkToSerial = {}
+  messageId = 0
+  listenTo = []
 
-  def print_track_info(self, data):
+  def __init__(self, talkToSerial):
+    print("PlayBack start")
+    self.listenTo = ["playback_state_changed", "stream_title_changed", "volume_changed"]
+    self.talkToSerial = talkToSerial
+    websocket.enableTrace(True)
+    self.ws = websocket.WebSocketApp("ws://localhost:6680/mopidy/ws",
+      on_message = self.on_message,
+      on_error = self.on_error,
+      on_close = self.on_close)
+    # self.ws.on_open = self.on_open
+
+    self.wst = threading.Thread(target=self.ws.run_forever)
+    self.wst.daemon = True
+    self.wst.start()
+
+  # mopidy events
+  def playback_state_changed(self, data):
+    state = data["new_state"]
+    self.talkToSerial.send("state&" + state)
+
+  def stream_title_changed(self, data):
+    title = data["title"]
+    self.talkToSerial.send("title&" + title)
+
+  def volume_changed(self, data):
+    volume = data["volume"]
+    self.talkToSerial.send("volume&" + str(volume))
+
+  # websocket events
+  def on_open(self, data):
+    print("ws on_open")
+
+  def on_message(self, data):
+    print("ws on_message", data)
+    parsed = {}
+    event = {}
+    parsed = json.loads(data)
+
+    if parsed.has_key("event"):
+      event = parsed["event"]
+      if event in self.listenTo:
+        method = getattr(self, event)
+        method(parsed)
+
+  def on_error(self, data):
+    print("ws on_error")
+
+  def on_close(self, data):
+    print("ws on_close")
+
+  def get_track_info(self, data):
     print("track info:")
     print(data)
 
+  def _rpc(self, data):
+    data["id"] = self.messageId
+    data["jsonrpc"] = "2.0"
+    self.messageId += 1
+    return json.dumps(data)
+
   def play(self, uri):
     print(uri)
-    subprocess.check_call(['mpc', 'clear'])
-    subprocess.check_call(['mpc', 'add', uri])
-    subprocess.check_call(['mpc', 'play'])
+    messages = [{"method":"core.tracklist.clear"},
+      {"method":"core.tracklist.add","params":{"uris":[uri]}},
+      {"method":"core.playback.play"}]
+    for i in messages:
+      self.ws.send(self._rpc(i))
+
+  def close(self):
+    self.ws.close()
+    self.wst.stop()
 
 
 class Commands(object):
   previousLine = ""
+  playBack = {}
 
-  def __init__(self):
+  def __init__(self, playBack=None):
     print("Commands start")
+    self.playBack = playBack
 
   def check(self, line, command):
     if line == self.previousLine:
@@ -134,10 +200,21 @@ class Commands(object):
   # play card to start track lookup
   def play(self, args):
     trackLookup = TrackLookup()
-    playBack = PlayBack()
     nfcCardId = args[0].replace('\n', '').replace(' ', ':')
     track = trackLookup.find(nfcCardId)
-    playBack.play(track)
+    self.playBack.play(track)
+
+class TalkToSerial(object):
+  s = {}
+  delimiter = "&"
+  def __init__(self, s):
+    print("TalkToSerial start")
+    self.s = s
+
+  def send(self, data):
+    print("TalkToSerial send", data)
+    command = self.delimiter + data + self.delimiter
+    self.s.write(command.encode())
 
 
 ###
@@ -146,7 +223,9 @@ class Commands(object):
 print("RC Receiver 1")
 s1 = serial.Serial(SERIAL_PORT, baudrate=9600, timeout=0.3)
 sio = io.TextIOWrapper(io.BufferedRWPair(s1, s1))
-CommandsInstance = Commands()
+TalkToSerialInstance = TalkToSerial(s1)
+PlayBackInstance = PlayBack(talkToSerial = TalkToSerialInstance)
+CommandsInstance = Commands(playBack = PlayBackInstance)
 
 s1.flush()
 
