@@ -4,6 +4,11 @@
 #
 # Alex Buznik <shu@buznik.net>
 # 2019
+#
+# Dependencies:
+# - pyserial
+# - websocket-client
+# - wifi
 ###
 import serial
 import io

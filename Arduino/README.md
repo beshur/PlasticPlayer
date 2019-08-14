@@ -28,6 +28,12 @@ Arduino Uno has I2C which is used to talk to NFC and OLED.
 
 Arduino sketch is loaded is usual.
 
+### Raspberry Pi Dependencies
+
+1. Update /etc/apt/sources.list to point to stretch
+2. sudo apt-get install vim raspi-config build-essential python-dev
+3. pip install pyserial websocket-client wifi
+
 Python `rp-receiver.py` file has to be loaded to your Raspberry Pi and run as `root`:
 
 ```
