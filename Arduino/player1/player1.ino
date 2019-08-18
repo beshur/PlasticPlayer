@@ -61,9 +61,16 @@ String nfcPtrTmp;
 String nfcCardId;
 String nfcCardWifi;
 
+const int playButtonPin = 2;
+const int nextButtonPin = 3;
+const int powerButtonPin = 4;
+
+int playButtonState = 0;
+int nextButtonState = 0;
+
 void setup(void) {
   Serial.begin(9600);
-  Serial.println("DI Player 1");
+  Serial.println("DI Player 1.0");
   startMillis = millis();
   nfc.begin();
 
@@ -83,6 +90,19 @@ void setup(void) {
 void loop(void) {
   scanNfc();
   delay(nfcDelay);
+  readButtons();
+}
+
+void readButtons() {
+  if (digitalRead(playButtonPin) == HIGH) {
+    msgComputer("button&play");
+  }
+  if (digitalRead(nextButtonPin) == HIGH) {
+    msgComputer("button&next");
+  }
+  if (digitalRead(powerButtonPin) == HIGH) {
+    msgComputer("button&power");
+  }
 }
 
 void scanNfc() {
@@ -215,5 +235,3 @@ void scrollTextLeftRight(void) {
   display.stopscroll();
   scrollTextLeftRight();
 }
-
-

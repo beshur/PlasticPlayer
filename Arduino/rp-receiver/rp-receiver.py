@@ -179,10 +179,12 @@ class PlayBack(object):
 class Commands(object):
   previousLine = ""
   playBack = {}
+  talkToSerial = {}
 
-  def __init__(self, playBack=None):
+  def __init__(self, playBack=None, talkToSerial=None):
     print("Commands start")
     self.playBack = playBack
+    self.talkToSerial = talkToSerial
 
   def check(self, line, command):
     if line == self.previousLine:
@@ -209,6 +211,13 @@ class Commands(object):
     track = trackLookup.find(nfcCardId)
     self.playBack.play(track)
 
+  # button click
+  def button(self, args):
+    buttonName = args[0].replace('\n', '')
+    if buttonName == "power":
+      self.talkToSerial.send("state&Shutting down")
+      os.system("poweroff")
+
 class TalkToSerial(object):
   s = {}
   delimiter = "&"
@@ -230,7 +239,7 @@ s1 = serial.Serial(SERIAL_PORT, baudrate=9600, timeout=0.3)
 sio = io.TextIOWrapper(io.BufferedRWPair(s1, s1))
 TalkToSerialInstance = TalkToSerial(s1)
 PlayBackInstance = PlayBack(talkToSerial = TalkToSerialInstance)
-CommandsInstance = Commands(playBack = PlayBackInstance)
+CommandsInstance = Commands(playBack = PlayBackInstance, talkToSerial = TalkToSerialInstance)
 
 s1.flush()
 
