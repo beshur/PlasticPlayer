@@ -51,6 +51,8 @@ NfcAdapter nfc = NfcAdapter(pn532_i2c);
 unsigned long startMillis;
 unsigned long currentMillis;
 
+const char serialTerminator = 23;
+
 /* in order to detect wifi cards,
  * they should have the following format:
  * format: text/plain
@@ -61,15 +63,17 @@ String nfcPtrTmp;
 String nfcCardId;
 String nfcCardWifi;
 
+String serialTmp;
+
 const int playButtonPin = 2;
 const int nextButtonPin = 3;
-const int powerButtonPin = 4;
+const int powerButtonPin = 6;
 
 int playButtonState = 0;
 int nextButtonState = 0;
 
 void setup(void) {
-  Serial.begin(9600);
+  Serial.begin(115200);
   Serial.println("DI Player 1.0");
   startMillis = millis();
   nfc.begin();
@@ -91,6 +95,7 @@ void loop(void) {
   scanNfc();
   delay(nfcDelay);
   readButtons();
+  listenComputer();
 }
 
 void readButtons() {
@@ -196,6 +201,34 @@ void msgComputer(String data) {
   Serial.println(data);
 }
 
+void listenComputer() {
+  String read = Serial.readStringUntil(serialTerminator);
+
+  // understand the received data
+  int init_size = read.length();
+  String strCopy = read;
+  char delim[] = "&";
+
+  char *ptr = strtok(strCopy.c_str(), delim);
+
+  for (int i = 0; i < init_size; i++)
+  {
+    if (i == 0) {
+      serialTmp = String(ptr);
+    }
+    ptr = strtok(NULL, delim);
+
+    msgComputer("inside listenComputer serialTmp: " + serialTmp + String(ptr));
+    if (serialTmp.equals("text")) {
+      drawText(String(ptr));
+      break;
+    }
+
+    if (ptr == NULL) {
+      break;
+    }
+  }
+}
 
 /* graphics */
 void drawText(String text) {

@@ -27,7 +27,7 @@ SERIAL_PORT = "/dev/ttyUSB0"
 # Components
 ###
 def sendToSerial(data):
-  print(data)
+  print("deprecated: Use TalkToSerial class", data)
 
 class WiFi(object):
     ssid = ""
@@ -121,15 +121,15 @@ class PlayBack(object):
   # mopidy events
   def playback_state_changed(self, data):
     state = data["new_state"]
-    self.talkToSerial.send("state&" + state)
+    self.talkToSerial.send(getSerialType("text"), state)
 
   def stream_title_changed(self, data):
     title = data["title"]
-    self.talkToSerial.send("title&" + title)
+    self.talkToSerial.send(getSerialType("text"), title)
 
   def volume_changed(self, data):
     volume = data["volume"]
-    self.talkToSerial.send("volume&" + str(volume))
+    self.talkToSerial.send(getSerialType("text"), "Volume: " + str(volume))
 
   # websocket events
   def on_open(self, data):
@@ -215,27 +215,49 @@ class Commands(object):
   def button(self, args):
     buttonName = args[0].replace('\n', '')
     if buttonName == "power":
-      self.talkToSerial.send("state&Shutting down")
+      self.talkToSerial.send(getSerialType("text"), "Shutting down...")
       os.system("poweroff")
 
 class TalkToSerial(object):
   s = {}
   delimiter = "&"
+  # ASCII End of Transmission Block
+  terminator = str(chr(23))
+
   def __init__(self, s):
     print("TalkToSerial start")
     self.s = s
 
-  def send(self, data):
-    print("TalkToSerial send", data)
-    command = self.delimiter + data + self.delimiter
+  def _verifyInput(self, stype):
+    result = True
+    try:
+      getSerialType(stype)
+    except Exception(ce):
+      print("_verifyInput failed", ce)
+      result = False
+    return result
+
+  def send(self, stype, data):
+    print("TalkToSerial send", stype, data)
+    if self._verifyInput(stype) != True:
+      print("TalkToSerial stype invalid")
+
+    command = self.delimiter + stype + self.delimiter + data + self.terminator
+    encodedCommand = command.encode()
+    print("TalkToSerial send command", encodedCommand)
     self.s.write(command.encode())
 
+def getSerialType(name):
+  types = {
+    "text": "text"
+  }
+  return types[name];
 
 ###
 # Runtime
 ###
 print("RC Receiver 1")
-s1 = serial.Serial(SERIAL_PORT, baudrate=9600, timeout=0.3)
+s1 = serial.Serial(SERIAL_PORT, baudrate=115200, timeout=0.3)
 sio = io.TextIOWrapper(io.BufferedRWPair(s1, s1))
 TalkToSerialInstance = TalkToSerial(s1)
 PlayBackInstance = PlayBack(talkToSerial = TalkToSerialInstance)
