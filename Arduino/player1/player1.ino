@@ -66,8 +66,6 @@ String nfcCardWifi;
 String serialTmp;
 
 const int playButtonPin = 2;
-const int nextButtonPin = 3;
-const int powerButtonPin = 6;
 
 int playButtonState = 0;
 int nextButtonState = 0;
@@ -75,6 +73,7 @@ int nextButtonState = 0;
 void setup(void) {
   Serial.begin(115200);
   Serial.println("DI Player 1.0");
+  lightLed();
   startMillis = millis();
   nfc.begin();
 
@@ -98,15 +97,14 @@ void loop(void) {
   listenComputer();
 }
 
+void lightLed(void) {
+  pinMode(5, OUTPUT);
+  digitalWrite(5, HIGH);
+}
+
 void readButtons() {
   if (digitalRead(playButtonPin) == HIGH) {
     msgComputer("button&play");
-  }
-  if (digitalRead(nextButtonPin) == HIGH) {
-    msgComputer("button&next");
-  }
-  if (digitalRead(powerButtonPin) == HIGH) {
-    msgComputer("button&power");
   }
 }
 

@@ -19,6 +19,8 @@ import websocket
 import threading
 import json
 import pprint
+import RPi.GPIO as GPIO
+import time
 from wifi import Cell, Scheme
 
 SERIAL_PORT = "/dev/ttyUSB0"
@@ -28,6 +30,12 @@ SERIAL_PORT = "/dev/ttyUSB0"
 ###
 def sendToSerial(data):
   print("deprecated: Use TalkToSerial class", data)
+
+def onPowerBtnClick(talkToSerial):
+  print("Power button was pushed!")
+  talkToSerial.send(getSerialType("text"), "Shutting down...")
+  time.sleep(3)
+  os.system("poweroff")
 
 class WiFi(object):
     ssid = ""
@@ -263,6 +271,9 @@ TalkToSerialInstance = TalkToSerial(s1)
 PlayBackInstance = PlayBack(talkToSerial = TalkToSerialInstance)
 CommandsInstance = Commands(playBack = PlayBackInstance, talkToSerial = TalkToSerialInstance)
 
+GPIO.setmode(GPIO.BOARD)
+GPIO.setup(10, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
 s1.flush()
 
 while True:
@@ -271,3 +282,6 @@ while True:
     print(line)
 
     CommandsInstance.onCommand(line)
+
+  if GPIO.input(10) == GPIO.HIGH:
+    onPowerBtnClick(TalkToSerialInstance)
