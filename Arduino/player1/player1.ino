@@ -14,6 +14,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
+// SCREEN
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
 
@@ -44,36 +45,47 @@ static const unsigned char PROGMEM logo_bmp[] =
   B00000000, B00110000 };
 
 
+// NFC
 PN532_I2C pn532_i2c(Wire);
 NfcAdapter nfc = NfcAdapter(pn532_i2c);
 /* Uno's A4 to SDA & A5 to SCL */
-
-unsigned long startMillis;
-unsigned long currentMillis;
-
-const char serialTerminator = 23;
 
 /* in order to detect wifi cards,
  * they should have the following format:
  * format: text/plain
  * data: wifi&[ssid name]&[password]
  */
-int nfcDelay = 500;
+int nfcDelay = 1000;
 String nfcPtrTmp;
 String nfcCardId;
 String nfcCardWifi;
 
+
+// MISC TIMERS
+unsigned long startMillis;
+unsigned long currentMillis;
+
+// SERIAL Terminator
+const char serialTerminator = 23;
 String serialTmp;
 
+// BUTTONS
 const int playButtonPin = 2;
 
-int playButtonState = 0;
-int nextButtonState = 0;
+// STATUS LED
+const int statusLedR = 3;
+const int statusLedG = 6;
+const int statusLedB = 5;
+
+// ENCODER
+const int encoderInputA = 8;
+const int encoderInputB = 9;
 
 void setup(void) {
   Serial.begin(115200);
   Serial.println("DI Player 1.0");
-  lightLed();
+  setupStatusLed();
+  setupButton();
   startMillis = millis();
   nfc.begin();
 
@@ -91,32 +103,63 @@ void setup(void) {
 }
 
 void loop(void) {
-  scanNfc();
-  delay(nfcDelay);
-  readButtons();
+  currentMillis = millis();
+  if (currentMillis - startMillis > nfcDelay) {
+    scanNfc();
+    startMillis = currentMillis;
+  }
   listenComputer();
 }
 
-void lightLed(void) {
-  pinMode(5, OUTPUT);
-  digitalWrite(5, HIGH);
+void setupStatusLed(void) {
+  pinMode(statusLedR, OUTPUT);
+  pinMode(statusLedG, OUTPUT);
+  pinMode(statusLedB, OUTPUT);
+
+  changeStatusLedColor("yellow");
 }
 
-void readButtons() {
-  if (digitalRead(playButtonPin) == HIGH) {
-    msgComputer("button&play");
+void changeStatusLedColor(String color) {
+  if (color.equals("green")) {
+    // arduino ready
+    analogWrite(statusLedR, 0);
+    analogWrite(statusLedG, 120);
+    analogWrite(statusLedB, 0);
+  } else if (color.equals("white")) {
+    // handshake over serial
+    analogWrite(statusLedR, 120);
+    analogWrite(statusLedG, 120);
+    analogWrite(statusLedB, 120);
+  } else if (color.equals("yellow")) {
+    // init
+    analogWrite(statusLedR, 120);
+    analogWrite(statusLedG, 120);
+    analogWrite(statusLedB, 0);
   }
 }
 
+
+void setupEncoder(void) {
+  pinMode(encoderInputA, INPUT);
+  pinMode(encoderInputB, INPUT);
+}
+
+void setupButton() {
+  attachInterrupt(digitalPinToInterrupt(playButtonPin), readPlayButton, RISING);
+}
+
+void readPlayButton() {
+  msgComputer("button&play");
+}
+
 void scanNfc() {
-  // Serial.println("\nScan a NFC tag\n");
   nfcPtrTmp = "";
   nfcCardId = "";
   nfcCardWifi = "";
-  if (nfc.tagPresent())
-  {
+  if (!nfc.tagPresent()) {
+    msgComputer("button&clear");
+  } else {
     NfcTag tag = nfc.read();
-    // tag.print();
     nfcCardId = tag.getUidString();
 
     if (tag.hasNdefMessage())
@@ -134,16 +177,12 @@ void scanNfc() {
         byte payload[payloadLength];
         record.getPayload(payload);
 
-        String payloadAsString = ""; // Processes the message as a string vs as a HEX value
+        // Processes the message as a string vs as a HEX value
+        String payloadAsString = "";
         for (int c = 0; c < payloadLength; c++)
         {
           payloadAsString += (char)payload[c];
         }
-
-        // Serial.println("\nTag Content Shown Below\n");
-
-        // Serial.println("Original String: ");
-        // Serial.println(payloadAsString);
 
         // Detect WI-FI
         int init_size = payloadLength;
@@ -156,8 +195,6 @@ void scanNfc() {
         for (int i = 0; i < init_size; i++)
         {
           nfcPtrTmp = String(ptr);
-          // Serial.println("token: " + nfcPtrTmp);
-          // Serial.println("token is wifi: " + nfcPtrTmp.equals("wifi"));
           ptr = strtok(NULL, delim);
 
           // it's a wifi card!
@@ -170,22 +207,15 @@ void scanNfc() {
             break;
           }
         }
-
-        String uid = record.getId();
-        if (uid != "")
-        {
-          // Serial.print("  ID: ");
-          // Serial.println(uid);
-        }
       }
 
     }
 
     if (nfcCardWifi.length()) {
-      drawText("WI-FI Card Detected...");
+      drawText("WI-FI Card");
       msgComputer(nfcCardWifi);
     } else {
-      drawText("Preparing to play...");
+      drawText("Loading...");
       msgComputer(formatNfcCardId(nfcCardId));
     }
   }

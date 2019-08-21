@@ -110,6 +110,7 @@ class PlayBack(object):
   talkToSerial = {}
   messageId = 0
   listenTo = []
+  playing = False
 
   def __init__(self, talkToSerial):
     print("PlayBack start")
@@ -129,6 +130,7 @@ class PlayBack(object):
   # mopidy events
   def playback_state_changed(self, data):
     state = data["new_state"]
+    self.playing = True if state == "playing" else False
     self.talkToSerial.send(getSerialType("text"), state)
 
   def stream_title_changed(self, data):
@@ -171,13 +173,39 @@ class PlayBack(object):
     self.messageId += 1
     return json.dumps(data)
 
+  def _send_messages(self, messages):
+    for i in messages:
+      self.ws.send(self._rpc(i))
+
   def play(self, uri):
     print(uri)
     messages = [{"method":"core.tracklist.clear"},
       {"method":"core.tracklist.add","params":{"uris":[uri]}},
       {"method":"core.playback.play"}]
-    for i in messages:
-      self.ws.send(self._rpc(i))
+
+    self._send_messages(messages)
+
+  def onPlayButton(self):
+    if self.playing == True:
+      self.pause()
+    else:
+      self.resume()
+
+  def resume(self):
+    self.talkToSerial.send(getSerialType("text"), "Play")
+    messages = [{"method":"core.playback.resume"}]
+    self._send_messages(messages)
+
+  def pause(self):
+    self.talkToSerial.send(getSerialType("text"), "Pause")
+    messages = [{"method":"core.playback.pause"}]
+    self._send_messages(messages)
+
+  def clear(self):
+    self.talkToSerial.send(getSerialType("text"), "Stop")
+    messages = [{"method":"core.playback.stop"},
+      {"method":"core.tracklist.clear"}]
+    self._send_messages(messages)
 
   def close(self):
     self.ws.close()
@@ -195,9 +223,17 @@ class Commands(object):
     self.talkToSerial = talkToSerial
 
   def check(self, line, command):
+    if command == "button":
+      return True
+
     if line == self.previousLine:
       return False
-    return hasattr(self, command)
+
+    if hasattr(self, command):
+      self.previousLine = line
+      return True
+    else:
+      return False
 
   def onCommand(self, line):
     words = line.split("&")
@@ -222,9 +258,20 @@ class Commands(object):
   # button click
   def button(self, args):
     buttonName = args[0].replace('\n', '')
-    if buttonName == "power":
-      self.talkToSerial.send(getSerialType("text"), "Shutting down...")
-      os.system("poweroff")
+    print('button', buttonName)
+    # toggle play/pause
+    if buttonName == "play":
+      self.playBack.onPlayButton()
+
+    # next track
+    if buttonName == "next":
+      self.playBack.next()
+
+    # clear and stop
+    if buttonName == "clear":
+      # clear previous line because the card was ejected
+      self.previousLine = ""
+      self.playBack.clear()
 
 class TalkToSerial(object):
   s = {}
