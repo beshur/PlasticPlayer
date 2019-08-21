@@ -60,6 +60,8 @@ String nfcPtrTmp;
 String nfcCardId;
 String nfcCardWifi;
 
+// HANDSHAKE CONFIRM
+int handshake = 0;
 
 // MISC TIMERS
 unsigned long startMillis;
@@ -73,9 +75,9 @@ String serialTmp;
 const int playButtonPin = 2;
 
 // STATUS LED
-const int statusLedR = 3;
-const int statusLedG = 6;
-const int statusLedB = 5;
+const int statusLedR = 9;
+const int statusLedG = 10;
+const int statusLedB = 11;
 
 // ENCODER
 const int encoderInputA = 8;
@@ -84,6 +86,7 @@ const int encoderInputB = 9;
 void setup(void) {
   Serial.begin(115200);
   Serial.println("DI Player 1.0");
+  Serial.println("handshake&");
   setupStatusLed();
   setupButton();
   startMillis = millis();
@@ -120,20 +123,21 @@ void setupStatusLed(void) {
 }
 
 void changeStatusLedColor(String color) {
+  int brightness = 50;
   if (color.equals("green")) {
     // arduino ready
     analogWrite(statusLedR, 0);
-    analogWrite(statusLedG, 120);
+    analogWrite(statusLedG, brightness);
     analogWrite(statusLedB, 0);
   } else if (color.equals("white")) {
     // handshake over serial
-    analogWrite(statusLedR, 120);
-    analogWrite(statusLedG, 120);
-    analogWrite(statusLedB, 120);
+    analogWrite(statusLedR, brightness);
+    analogWrite(statusLedG, brightness);
+    analogWrite(statusLedB, brightness);
   } else if (color.equals("yellow")) {
     // init
-    analogWrite(statusLedR, 120);
-    analogWrite(statusLedG, 120);
+    analogWrite(statusLedR, brightness);
+    analogWrite(statusLedG, brightness);
     analogWrite(statusLedB, 0);
   }
 }
@@ -249,6 +253,10 @@ void listenComputer() {
     msgComputer("inside listenComputer serialTmp: " + serialTmp + String(ptr));
     if (serialTmp.equals("text")) {
       drawText(String(ptr));
+      break;
+    } else if (serialTmp.equals("handshake")) {
+      drawText("Ready");
+      changeStatusLedColor("white");
       break;
     }
 

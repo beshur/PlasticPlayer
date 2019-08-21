@@ -242,6 +242,10 @@ class Commands(object):
     if True == self.check(line, words[0]):
       getattr(self, words[0])(words[1:])
 
+  # handshake
+  def handshake(self, args):
+    self.talkToSerial.send(getSerialType("handshake"), "true")
+
   # wifi setup card
   def wifi(self, args):
     print("wifi command detected, connecting to " + args[0])
@@ -304,7 +308,8 @@ class TalkToSerial(object):
 
 def getSerialType(name):
   types = {
-    "text": "text"
+    "text": "text",
+    "handshake": "handshake"
   }
   return types[name];
 
