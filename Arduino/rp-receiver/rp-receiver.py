@@ -111,6 +111,7 @@ class PlayBack(object):
   messageId = 0
   listenTo = []
   playing = False
+  volume = 0
 
   def __init__(self, talkToSerial):
     print("PlayBack start")
@@ -139,6 +140,7 @@ class PlayBack(object):
 
   def volume_changed(self, data):
     volume = data["volume"]
+    self.volume = volume
     self.talkToSerial.send(getSerialType("text"), "Volume: " + str(volume))
 
   # websocket events
@@ -146,7 +148,7 @@ class PlayBack(object):
     print("ws on_open")
 
   def on_message(self, data):
-    print("ws on_message", data)
+    # print("ws on_message", data)
     parsed = {}
     event = {}
     parsed = json.loads(data)
@@ -160,8 +162,8 @@ class PlayBack(object):
   def on_error(self, data):
     print("ws on_error")
 
-  def on_close(self, data):
-    print("ws on_close")
+  def on_close(self, data, error):
+    print("ws on_close", data, error)
 
   def get_track_info(self, data):
     print("track info:")
@@ -191,6 +193,10 @@ class PlayBack(object):
     else:
       self.resume()
 
+  def next(self):
+    messages = [{"method":"core.playback.next"}]
+    self._send_messages(messages)
+
   def resume(self):
     self.talkToSerial.send(getSerialType("text"), "Play")
     messages = [{"method":"core.playback.resume"}]
@@ -199,6 +205,22 @@ class PlayBack(object):
   def pause(self):
     self.talkToSerial.send(getSerialType("text"), "Pause")
     messages = [{"method":"core.playback.pause"}]
+    self._send_messages(messages)
+
+  def setVolume(self, up):
+    new_volume = self.volume
+    if (up == True):
+      new_volume = self.volume + 2
+      if new_volume > 100:
+        new_volume = 100
+    else:
+      new_volume = self.volume - 2
+      if new_volume < 0:
+        new_volume = 0
+
+    self.volume = new_volume
+
+    messages = [{"method":"core.mixer.set_volume", "params":{"volume": new_volume}}]
     self._send_messages(messages)
 
   def clear(self):
@@ -223,7 +245,7 @@ class Commands(object):
     self.talkToSerial = talkToSerial
 
   def check(self, line, command):
-    if command == "button":
+    if command == "button" or command == "volume":
       return True
 
     if line == self.previousLine:
@@ -251,6 +273,10 @@ class Commands(object):
     print("wifi command detected, connecting to " + args[0])
     theWifi = WiFi(args[0], args[1])
     theWifi.connect()
+
+  def volume(self, args):
+    up = args[0].replace('\n', '') == "up"
+    self.playBack.setVolume(up)
 
   # play card to start track lookup
   def play(self, args):

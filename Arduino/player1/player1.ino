@@ -9,8 +9,6 @@
 #include <PN532_I2C.h>
 #include <PN532.h>
 #include <NfcAdapter.h>
-#include <Adafruit_SSD1306.h>
-#include <splash.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
@@ -22,28 +20,7 @@
 #define OLED_RESET     4 // Reset pin # (or -1 if sharing Arduino reset pin)
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-#define NUMFLAKES     10 // Number of snowflakes in the animation example
-
-#define LOGO_HEIGHT   16
-#define LOGO_WIDTH    16
-static const unsigned char PROGMEM logo_bmp[] =
-{ B00000000, B11000000,
-  B00000001, B11000000,
-  B00000001, B11000000,
-  B00000011, B11100000,
-  B11110011, B11100000,
-  B11111110, B11111000,
-  B01111110, B11111111,
-  B00110011, B10011111,
-  B00011111, B11111100,
-  B00001101, B01110000,
-  B00011011, B10100000,
-  B00111111, B11100000,
-  B00111111, B11110000,
-  B01111100, B11110000,
-  B01110000, B01110000,
-  B00000000, B00110000 };
-
+const String VERSION = "1.0.0";
 
 // NFC
 PN532_I2C pn532_i2c(Wire);
@@ -59,6 +36,7 @@ int nfcDelay = 1000;
 String nfcPtrTmp;
 String nfcCardId;
 String nfcCardWifi;
+int oldNfcCardPresent = 0;
 
 // HANDSHAKE CONFIRM
 int handshake = 0;
@@ -72,37 +50,39 @@ const char serialTerminator = 23;
 String serialTmp;
 
 // BUTTONS
-const int playButtonPin = 2;
+const int playButtonPin = 5;
+int playButtonInit = 0;
+const int nextButtonPin = 7;
+int nextButtonInit = 0;
 
 // STATUS LED
 const int statusLedR = 9;
 const int statusLedG = 10;
 const int statusLedB = 11;
 
-// ENCODER
-const int encoderInputA = 8;
-const int encoderInputB = 9;
+// VOLUME
+const int volumePotPin = 2;
+int oldVolume = 0;
 
 void setup(void) {
   Serial.begin(115200);
-  Serial.println("DI Player 1.0");
+  Serial.setTimeout(300);
+  Serial.println("DI Player " + VERSION);
   Serial.println("handshake&");
   setupStatusLed();
-  setupButton();
+  setupButtons();
   startMillis = millis();
   nfc.begin();
 
-  // Serial.println("NFC began");
+  Serial.println("NFC began");
 
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3C for 128x32
-    // Serial.println(F("SSD1306 allocation failed"));
+    Serial.println("error&SSD1306 allocation failed");
     for(;;); // Don't proceed, loop forever
+  } else {
+    drawText("DI Player");
   }
-  // Show initial display buffer contents on the screen --
-  // the library initializes this with an Adafruit splash screen.
-  display.display();
-
 }
 
 void loop(void) {
@@ -111,6 +91,7 @@ void loop(void) {
     scanNfc();
     startMillis = currentMillis;
   }
+  readVolumePot();
   listenComputer();
 }
 
@@ -143,26 +124,43 @@ void changeStatusLedColor(String color) {
 }
 
 
-void setupEncoder(void) {
-  pinMode(encoderInputA, INPUT);
-  pinMode(encoderInputB, INPUT);
+void readVolumePot(void) {
+  int newVolume = analogRead(volumePotPin);
+  if (newVolume != oldVolume) {
+    String volume = String(newVolume/10);
+    msgComputer("volume&" + volume);
+
+    oldVolume = newVolume;
+  }
 }
 
-void setupButton() {
-  attachInterrupt(digitalPinToInterrupt(playButtonPin), readPlayButton, RISING);
+void setupButtons() {
+  pinMode(playButtonPin, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(playButtonPin), onPlayButton, CHANGE);
+
 }
 
-void readPlayButton() {
-  msgComputer("button&play");
+void onNextButton() {
+  if (nextButtonInit == 0) {
+    nextButtonInit = 1;
+  } else {
+    msgComputer("button&next");
+  }
+}
+
+void onPlayButton() {
+  if (playButtonInit == 0) {
+    playButtonInit = 1;
+  } else {
+    msgComputer("button&play");
+  }
 }
 
 void scanNfc() {
   nfcPtrTmp = "";
   nfcCardId = "";
   nfcCardWifi = "";
-  if (!nfc.tagPresent()) {
-    msgComputer("button&clear");
-  } else {
+  if (nfc.tagPresent(50)) {
     NfcTag tag = nfc.read();
     nfcCardId = tag.getUidString();
 
@@ -214,13 +212,24 @@ void scanNfc() {
       }
 
     }
-
-    if (nfcCardWifi.length()) {
-      drawText("WI-FI Card");
-      msgComputer(nfcCardWifi);
-    } else {
-      drawText("Loading...");
-      msgComputer(formatNfcCardId(nfcCardId));
+  }
+  if (nfcCardId == "") {
+    if (oldNfcCardPresent == 1) {
+      // card removed
+      oldNfcCardPresent = 0;
+      msgComputer("button&clear");
+    }
+  } else {
+    if (oldNfcCardPresent == 0) {
+      // card deployed
+      oldNfcCardPresent = 1;
+      if (nfcCardWifi.length()) {
+        drawText("WI-FI Card");
+        msgComputer(nfcCardWifi);
+      } else {
+        drawText("Loading...");
+        msgComputer(formatNfcCardId(nfcCardId));
+      }
     }
   }
 }
@@ -240,28 +249,28 @@ void listenComputer() {
   int init_size = read.length();
   String strCopy = read;
   char delim[] = "&";
+  if (init_size > 0) {
+    char *ptr = strtok(strCopy.c_str(), delim);
 
-  char *ptr = strtok(strCopy.c_str(), delim);
+    for (int i = 0; i < init_size; i++)
+    {
+      if (i == 0) {
+        serialTmp = String(ptr);
+      }
+      ptr = strtok(NULL, delim);
 
-  for (int i = 0; i < init_size; i++)
-  {
-    if (i == 0) {
-      serialTmp = String(ptr);
-    }
-    ptr = strtok(NULL, delim);
+      if (serialTmp.equals("text")) {
+        drawText(String(ptr));
+        break;
+      } else if (serialTmp.equals("handshake")) {
+        drawText("Ready");
+        changeStatusLedColor("white");
+        break;
+      }
 
-    msgComputer("inside listenComputer serialTmp: " + serialTmp + String(ptr));
-    if (serialTmp.equals("text")) {
-      drawText(String(ptr));
-      break;
-    } else if (serialTmp.equals("handshake")) {
-      drawText("Ready");
-      changeStatusLedColor("white");
-      break;
-    }
-
-    if (ptr == NULL) {
-      break;
+      if (ptr == NULL) {
+        break;
+      }
     }
   }
 }
@@ -271,36 +280,9 @@ void drawText(String text) {
   display.clearDisplay();
 
   display.setTextWrap(false);
-//  drawScrolltext(text);
-//  return;
   display.setTextSize(2);
   display.setTextColor(WHITE);
   display.setCursor(0, 0);
   display.println(text);
-  display.display();      // Show initial text
-  delay(100);
-}
-
-void drawScrolltext(String text) {
-  display.clearDisplay();
-
-  display.setTextSize(2); // Draw 2X-scale text
-  display.setTextColor(WHITE);
-  display.setCursor(0, 0);
-  display.println(text);
-  display.display();      // Show initial text
-  delay(100);
-  scrollTextLeftRight();
-}
-
-void scrollTextLeftRight(void) {
-  // Scroll in various directions, pausing in-between:
-  display.startscrollright(0x00, 0x0F);
-  delay(2000);
-  display.stopscroll();
-  delay(1000);
-  display.startscrollleft(0x00, 0x0F);
-  delay(2000);
-  display.stopscroll();
-  scrollTextLeftRight();
+  display.display();
 }
