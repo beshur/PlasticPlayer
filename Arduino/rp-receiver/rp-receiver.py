@@ -207,20 +207,9 @@ class PlayBack(object):
     messages = [{"method":"core.playback.pause"}]
     self._send_messages(messages)
 
-  def setVolume(self, up):
-    new_volume = self.volume
-    if (up == True):
-      new_volume = self.volume + 2
-      if new_volume > 100:
-        new_volume = 100
-    else:
-      new_volume = self.volume - 2
-      if new_volume < 0:
-        new_volume = 0
-
-    self.volume = new_volume
-
-    messages = [{"method":"core.mixer.set_volume", "params":{"volume": new_volume}}]
+  def setVolume(self, volumeVal):
+    print("setVolume", volumeVal)
+    messages = [{"method":"core.mixer.set_volume", "params":{"volume": volumeVal}}]
     self._send_messages(messages)
 
   def clear(self):
@@ -275,8 +264,8 @@ class Commands(object):
     theWifi.connect()
 
   def volume(self, args):
-    up = args[0].replace('\n', '') == "up"
-    self.playBack.setVolume(up)
+    volumeVal = args[0].replace('\n', '')
+    self.playBack.setVolume(int(volumeVal))
 
   # play card to start track lookup
   def play(self, args):

@@ -61,8 +61,12 @@ const int statusLedG = 10;
 const int statusLedB = 11;
 
 // VOLUME
-const int volumePotPin = 2;
+const int volumePotPin = 0;
 int oldVolume = 0;
+int oldVolumeAvg = 0;
+byte volumeSamplerI = 0;
+const int volumeSamplesCount = 10;
+int volumeSamples[volumeSamplesCount];
 
 void setup(void) {
   Serial.begin(115200);
@@ -71,6 +75,7 @@ void setup(void) {
   Serial.println("handshake&");
   setupStatusLed();
   setupButtons();
+  setupVolumePot();
   startMillis = millis();
   nfc.begin();
 
@@ -86,13 +91,22 @@ void setup(void) {
 }
 
 void loop(void) {
+
   currentMillis = millis();
   if (currentMillis - startMillis > nfcDelay) {
-    scanNfc();
     startMillis = currentMillis;
+    scanNfc();
+    msgComputer("@scanNfc end");
+  } else {
+    readVolumePot();
   }
-  readVolumePot();
   listenComputer();
+}
+
+void setupVolumePot() {
+  for (int i = 0; i < volumeSamplesCount; i++) {
+    volumeSamples[i] = 0;
+  }
 }
 
 void setupStatusLed(void) {
@@ -126,11 +140,19 @@ void changeStatusLedColor(String color) {
 
 void readVolumePot(void) {
   int newVolume = analogRead(volumePotPin);
-  if (newVolume != oldVolume) {
-    String volume = String(newVolume/10);
-    msgComputer("volume&" + volume);
+  oldVolume = oldVolume - volumeSamples[volumeSamplerI];
+  volumeSamples[volumeSamplerI] = newVolume;
 
-    oldVolume = newVolume;
+  oldVolume = oldVolume + newVolume;
+  int volumeAvg = min(oldVolume/volumeSamplesCount/10, 100);
+  volumeSamplerI = volumeSamplerI + 1;
+  if (volumeSamplerI >= volumeSamplesCount) {
+    volumeSamplerI = 0;
+  }
+
+  if (abs(oldVolumeAvg - volumeAvg) > 4) {
+    oldVolumeAvg = volumeAvg;
+    msgComputer("volume&" + String(volumeAvg));
   }
 }
 
