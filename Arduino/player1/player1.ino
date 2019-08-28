@@ -51,9 +51,7 @@ String serialTmp;
 
 // BUTTONS
 const int playButtonPin = 5;
-int playButtonInit = 0;
-const int nextButtonPin = 7;
-int nextButtonInit = 0;
+byte playButtonInit = 0;
 
 // STATUS LED
 const int statusLedR = 9;
@@ -100,6 +98,7 @@ void loop(void) {
   } else {
     readVolumePot();
   }
+  checkPlayButton();
   listenComputer();
 }
 
@@ -158,22 +157,19 @@ void readVolumePot(void) {
 
 void setupButtons() {
   pinMode(playButtonPin, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(playButtonPin), onPlayButton, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(playButtonPin), onPlayButton, FALLING);
 
-}
-
-void onNextButton() {
-  if (nextButtonInit == 0) {
-    nextButtonInit = 1;
-  } else {
-    msgComputer("button&next");
-  }
 }
 
 void onPlayButton() {
   if (playButtonInit == 0) {
     playButtonInit = 1;
-  } else {
+  }
+}
+
+void checkPlayButton() {
+  if (playButtonInit == 1) {
+    playButtonInit = 0;
     msgComputer("button&play");
   }
 }
