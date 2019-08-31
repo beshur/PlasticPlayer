@@ -156,22 +156,27 @@ void readVolumePot(void) {
 }
 
 void setupButtons() {
-  pinMode(playButtonPin, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(playButtonPin), onPlayButton, FALLING);
-
+  pinMode(playButtonPin, INPUT);
+  attachInterrupt(digitalPinToInterrupt(playButtonPin), onPlayButton, HIGH);
 }
 
 void onPlayButton() {
-  if (playButtonInit == 0) {
-    playButtonInit = 1;
-  }
+  playButtonInit = HIGH;
 }
 
 void checkPlayButton() {
-  if (playButtonInit == 1) {
-    playButtonInit = 0;
-    msgComputer("button&play");
+  if (playButtonInit == HIGH) {
+    msgComputer(String(millis()) + " " + String(playButtonDebounceMs));
+    if (millis() - playButtonDebounceMs > playButtonDebounce) {
+      onPlayButtonAction();
+    }
   }
+}
+
+void onPlayButtonAction() {
+  playButtonDebounceMs = millis();
+  playButtonInit = LOW;
+  msgComputer("button&play");
 }
 
 void scanNfc() {
@@ -181,56 +186,8 @@ void scanNfc() {
   if (nfc.tagPresent(50)) {
     NfcTag tag = nfc.read();
     nfcCardId = tag.getUidString();
-
-    if (tag.hasNdefMessage())
-    {
-      NdefMessage message = tag.getNdefMessage();
-
-      // If you have more than 1 Message then it wil cycle through them
-      int recordCount = message.getRecordCount();
-      for (int i = 0; i < recordCount; i++)
-      {
-
-        NdefRecord record = message.getRecord(i);
-
-        int payloadLength = record.getPayloadLength();
-        byte payload[payloadLength];
-        record.getPayload(payload);
-
-        // Processes the message as a string vs as a HEX value
-        String payloadAsString = "";
-        for (int c = 0; c < payloadLength; c++)
-        {
-          payloadAsString += (char)payload[c];
-        }
-
-        // Detect WI-FI
-        int init_size = payloadLength;
-        String strCopy = payloadAsString;
-        char delim[] = "&";
-        nfcCardWifi = "";
-
-        char *ptr = strtok(strCopy.c_str(), delim);
-
-        for (int i = 0; i < init_size; i++)
-        {
-          nfcPtrTmp = String(ptr);
-          ptr = strtok(NULL, delim);
-
-          // it's a wifi card!
-          if (nfcPtrTmp.equals("wifi")) {
-            nfcCardWifi = payloadAsString;
-            break;
-          }
-
-          if (ptr == NULL) {
-            break;
-          }
-        }
-      }
-
-    }
   }
+
   if (nfcCardId == "") {
     if (oldNfcCardPresent == 1) {
       // card removed
