@@ -24,6 +24,8 @@ import time
 from wifi import Cell, Scheme
 
 SERIAL_PORT = "/dev/ttyUSB0"
+# ASCII End of Transmission Block
+SERIAL_TERMINATOR = str(chr(23))
 
 ###
 # Components
@@ -33,7 +35,7 @@ def sendToSerial(data):
 
 def onPowerBtnClick(talkToSerial):
   print("Power button was pushed!")
-  talkToSerial.send(getSerialType("text"), "Shutting down...")
+  talkToSerial.send(getSerialType("sys"), "Shutdown...")
   time.sleep(3)
   os.system("poweroff")
 
@@ -136,7 +138,7 @@ class PlayBack(object):
 
   def stream_title_changed(self, data):
     title = data["title"]
-    self.talkToSerial.send(getSerialType("text"), title)
+    self.talkToSerial.send(getSerialType("title"), title)
 
   def volume_changed(self, data):
     volume = data["volume"]
@@ -247,7 +249,8 @@ class Commands(object):
       return False
 
   def onCommand(self, line):
-    words = line.split("&")
+    cleanLine = line.split(SERIAL_TERMINATOR)[0]
+    words = cleanLine.split("&")
     print("words ")
     print(words)
     if True == self.check(line, words[0]):
@@ -269,11 +272,11 @@ class Commands(object):
 
   # play card to start track lookup
   def play(self, args):
+    # 04:1A:D1:FA:86:52:81
     trackLookup = TrackLookup()
-    nfcCardId = args[0].replace('\n', '').replace(' ', ':')
+    nfcCardId = args[0][0:20].replace(' ', ':')
     track = trackLookup.find(nfcCardId)
     self.playBack.play(track)
-
   # button click
   def button(self, args):
     buttonName = args[0].replace('\n', '')
@@ -295,8 +298,6 @@ class Commands(object):
 class TalkToSerial(object):
   s = {}
   delimiter = "&"
-  # ASCII End of Transmission Block
-  terminator = str(chr(23))
 
   def __init__(self, s):
     print("TalkToSerial start")
@@ -316,7 +317,7 @@ class TalkToSerial(object):
     if self._verifyInput(stype) != True:
       print("TalkToSerial stype invalid")
 
-    command = self.delimiter + stype + self.delimiter + data + self.terminator
+    command = self.delimiter + stype + self.delimiter + data + SERIAL_TERMINATOR
     encodedCommand = command.encode()
     print("TalkToSerial send command", encodedCommand)
     self.s.write(command.encode())
@@ -324,6 +325,8 @@ class TalkToSerial(object):
 def getSerialType(name):
   types = {
     "text": "text",
+    "title": "title",
+    "sys": "sys",
     "handshake": "handshake"
   }
   return types[name];

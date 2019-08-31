@@ -15,10 +15,17 @@
 // SCREEN
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
-
 // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
 #define OLED_RESET     4 // Reset pin # (or -1 if sharing Arduino reset pin)
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+String screenText = "";
+String screenTitle = "";
+String screenSys = "";
+const int textDelay = 2000;
+unsigned long textMillis;
+int titleTextI = 0;
+byte titleTextFwd = 1;
+bool textTimeElapsed = true;
 
 const String VERSION = "1.0.0";
 
@@ -26,32 +33,25 @@ const String VERSION = "1.0.0";
 PN532_I2C pn532_i2c(Wire);
 NfcAdapter nfc = NfcAdapter(pn532_i2c);
 /* Uno's A4 to SDA & A5 to SCL */
-
-/* in order to detect wifi cards,
- * they should have the following format:
- * format: text/plain
- * data: wifi&[ssid name]&[password]
- */
-int nfcDelay = 1000;
-String nfcPtrTmp;
-String nfcCardId;
-String nfcCardWifi;
+const int nfcDelay = 1000;
+String nfcCardId = "";
 int oldNfcCardPresent = 0;
 
 // HANDSHAKE CONFIRM
-int handshake = 0;
+bool handshake = false;
 
 // MISC TIMERS
-unsigned long startMillis;
+unsigned long nfcStartMillis;
 unsigned long currentMillis;
 
 // SERIAL Terminator
 const char serialTerminator = 23;
-String serialTmp;
 
 // BUTTONS
-const int playButtonPin = 5;
-byte playButtonInit = 0;
+const int playButtonPin = 2;
+volatile byte playButtonInit = LOW;
+const int playButtonDebounce = 200;
+unsigned long playButtonDebounceMs = 0;
 
 // STATUS LED
 const int statusLedR = 9;
@@ -63,42 +63,44 @@ const int volumePotPin = 0;
 int oldVolume = 0;
 int oldVolumeAvg = 0;
 byte volumeSamplerI = 0;
-const int volumeSamplesCount = 10;
+const int volumeSamplesCount = 5;
 int volumeSamples[volumeSamplesCount];
 
 void setup(void) {
   Serial.begin(115200);
   Serial.setTimeout(300);
-  Serial.println("DI Player " + VERSION);
-  Serial.println("handshake&");
+  msgComputer("DI Player " + VERSION);
+  msgComputer("handshake&");
   setupStatusLed();
   setupButtons();
   setupVolumePot();
-  startMillis = millis();
+  nfcStartMillis = millis();
+  textMillis = millis();
   nfc.begin();
 
-  Serial.println("NFC began");
+  msgComputer("NFC began");
 
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3C for 128x32
-    Serial.println("error&SSD1306 allocation failed");
+    msgComputer("error&SSD1306 allocation failed");
+    changeStatusLedColor("red");
     for(;;); // Don't proceed, loop forever
   } else {
+    setTextSettings();
     drawText("DI Player");
   }
 }
 
 void loop(void) {
-
   currentMillis = millis();
-  if (currentMillis - startMillis > nfcDelay) {
-    startMillis = currentMillis;
+  if (currentMillis - nfcStartMillis > nfcDelay) {
+    nfcStartMillis = currentMillis;
     scanNfc();
-    msgComputer("@scanNfc end");
   } else {
     readVolumePot();
   }
   checkPlayButton();
+  renderScreenState();
   listenComputer();
 }
 
@@ -133,6 +135,14 @@ void changeStatusLedColor(String color) {
     analogWrite(statusLedR, brightness);
     analogWrite(statusLedG, brightness);
     analogWrite(statusLedB, 0);
+  } else if (color.equals("blue")) {
+    analogWrite(statusLedR, 0);
+    analogWrite(statusLedG, 0);
+    analogWrite(statusLedB, brightness);
+  } else if (color.equals("red")) {
+    analogWrite(statusLedR, brightness);
+    analogWrite(statusLedG, 0);
+    analogWrite(statusLedB, 0);
   }
 }
 
@@ -166,23 +176,20 @@ void onPlayButton() {
 
 void checkPlayButton() {
   if (playButtonInit == HIGH) {
-    msgComputer(String(millis()) + " " + String(playButtonDebounceMs));
-    if (millis() - playButtonDebounceMs > playButtonDebounce) {
+    if (currentMillis - playButtonDebounceMs > playButtonDebounce) {
       onPlayButtonAction();
     }
   }
 }
 
 void onPlayButtonAction() {
-  playButtonDebounceMs = millis();
+  playButtonDebounceMs = currentMillis;
   playButtonInit = LOW;
   msgComputer("button&play");
 }
 
 void scanNfc() {
-  nfcPtrTmp = "";
   nfcCardId = "";
-  nfcCardWifi = "";
   if (nfc.tagPresent(50)) {
     NfcTag tag = nfc.read();
     nfcCardId = tag.getUidString();
@@ -198,13 +205,8 @@ void scanNfc() {
     if (oldNfcCardPresent == 0) {
       // card deployed
       oldNfcCardPresent = 1;
-      if (nfcCardWifi.length()) {
-        drawText("WI-FI Card");
-        msgComputer(nfcCardWifi);
-      } else {
-        drawText("Loading...");
-        msgComputer(formatNfcCardId(nfcCardId));
-      }
+      msgComputer(formatNfcCardId(nfcCardId));
+      drawText("Loading...");
     }
   }
 }
@@ -214,11 +216,19 @@ String formatNfcCardId(String id) {
 }
 
 void msgComputer(String data) {
-  Serial.println(data);
+  Serial.println(data + serialTerminator);
 }
 
 void listenComputer() {
+  readSerial();
+  if (Serial.available() > 0) {
+  }
+}
+
+void readSerial() {
   String read = Serial.readStringUntil(serialTerminator);
+  String message = "";
+  String prefix = "";
 
   // understand the received data
   int init_size = read.length();
@@ -226,38 +236,80 @@ void listenComputer() {
   char delim[] = "&";
   if (init_size > 0) {
     char *ptr = strtok(strCopy.c_str(), delim);
+    prefix = String(ptr);
 
-    for (int i = 0; i < init_size; i++)
-    {
-      if (i == 0) {
-        serialTmp = String(ptr);
-      }
-      ptr = strtok(NULL, delim);
+    ptr = strtok(NULL, delim);
+    message = String(ptr);
 
-      if (serialTmp.equals("text")) {
-        drawText(String(ptr));
-        break;
-      } else if (serialTmp.equals("handshake")) {
-        drawText("Ready");
-        changeStatusLedColor("white");
-        break;
-      }
-
-      if (ptr == NULL) {
-        break;
-      }
+    if (prefix.equals("text")) {
+      screenText = message;
+    } else if (prefix.equals("sys")) {
+      screenSys = message;
+    } else if (prefix.equals("title")) {
+      screenTitle = message;
+    } else if (prefix.equals("handshake")) {
+      handshake = true;
+      screenText = "Ready";
+      changeStatusLedColor("white");
     }
   }
 }
 
 /* graphics */
-void drawText(String text) {
-  display.clearDisplay();
+void renderScreenState() {
+  if (currentMillis - textMillis > textDelay) {
+    textTimeElapsed = true;
+  }
 
+  if (screenSys.length() > 0) {
+    drawTextScroll(screenSys);
+  } else if (oldNfcCardPresent == 1) {
+    if (screenText.length() > 0) {
+      drawText(screenText);
+      textMillis = currentMillis;
+      textTimeElapsed = false;
+      screenText = "";
+    } else if (screenTitle.length() > 0 && textTimeElapsed == true) {
+      drawTextScroll(screenTitle);
+    } else {
+      // Keeping the previous screenText
+    }
+  } else {
+    // default when card not present
+    drawText("Idle");
+  }
+}
+
+void setTextSettings() {
+  display.clearDisplay();
   display.setTextWrap(false);
   display.setTextSize(2);
   display.setTextColor(WHITE);
-  display.setCursor(0, 0);
+  display.setCursor(0, 3);
+}
+
+void drawText(String text) {
+  display.clearDisplay();
+  display.setCursor(0, 3);
   display.println(text);
   display.display();
+}
+
+void drawTextScroll(String text) {
+  String temp = text.substring(titleTextI, titleTextI + 10);
+
+  if (titleTextI <= 0 && titleTextFwd != 1) {
+    // reached the beginning
+    titleTextFwd = 1;
+    titleTextI = 0;
+  } else if (temp.length() < 10 || titleTextFwd == 0) {
+    // reached the end
+    titleTextI--;
+    titleTextFwd = 0;
+  } else {
+    // go forward
+    titleTextI++;
+  }
+
+  drawText(temp);
 }
