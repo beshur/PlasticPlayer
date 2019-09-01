@@ -35,7 +35,7 @@ def sendToSerial(data):
 
 def onPowerBtnClick(talkToSerial):
   print("Power button was pushed!")
-  talkToSerial.send(getSerialType("sys"), "Shutdown...")
+  talkToSerial.send(getSerialType("sys"), "Shutdown")
   time.sleep(3)
   os.system("poweroff")
 
