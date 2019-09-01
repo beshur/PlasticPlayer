@@ -22,7 +22,6 @@ String screenText = "";
 String screenTitle = "";
 String screenSys = "";
 const int textDelay = 2000;
-unsigned long textMillis;
 int titleTextI = 0;
 byte titleTextFwd = 1;
 bool textTimeElapsed = true;
@@ -43,6 +42,8 @@ bool handshake = false;
 // MISC TIMERS
 unsigned long nfcStartMillis;
 unsigned long currentMillis;
+unsigned long textMillis;
+unsigned long titleTextMillis;
 
 // SERIAL Terminator
 const char serialTerminator = 23;
@@ -63,7 +64,7 @@ const int volumePotPin = 0;
 int oldVolume = 0;
 int oldVolumeAvg = 0;
 byte volumeSamplerI = 0;
-const int volumeSamplesCount = 5;
+const int volumeSamplesCount = 1;
 int volumeSamples[volumeSamplesCount];
 
 void setup(void) {
@@ -74,8 +75,10 @@ void setup(void) {
   setupStatusLed();
   setupButtons();
   setupVolumePot();
-  nfcStartMillis = millis();
-  textMillis = millis();
+  currentMillis = millis();
+  nfcStartMillis = currentMillis;
+  textMillis = currentMillis;
+  titleTextMillis = currentMillis;
   nfc.begin();
 
   msgComputer("NFC began");
@@ -101,7 +104,6 @@ void loop(void) {
   }
   checkPlayButton();
   renderScreenState();
-  listenComputer();
 }
 
 void setupVolumePot() {
@@ -219,10 +221,8 @@ void msgComputer(String data) {
   Serial.println(data + serialTerminator);
 }
 
-void listenComputer() {
+void serialEvent() {
   readSerial();
-  if (Serial.available() > 0) {
-  }
 }
 
 void readSerial() {
@@ -297,6 +297,12 @@ void drawText(String text) {
 
 void drawTextScroll(String text) {
   String temp = text.substring(titleTextI, titleTextI + 10);
+
+  if (currentMillis - titleTextMillis < 300) {
+    return;
+  } else {
+    titleTextMillis = currentMillis;
+  }
 
   if (titleTextI <= 0 && titleTextFwd != 1) {
     // reached the beginning
