@@ -12,6 +12,7 @@
 import serial
 import io
 import os
+import subprocess
 import requests
 import urllib
 import websocket
@@ -325,6 +326,16 @@ def getSerialType(name):
   }
   return types[name];
 
+class CpuTemp(object):
+  temp = 0.0
+  cmd = "vcgencmd measure_temp | egrep -o '[0-9]*\.[0-9]*' | tr -d '\n'"
+
+  def measure(self):
+    self.temp = subprocess.check_output(self.cmd, shell=True)
+    print("CPU Temperature: " + self.temp)
+
+    return self.temp
+
 ###
 # Runtime
 ###
@@ -334,6 +345,7 @@ sio = io.TextIOWrapper(io.BufferedRWPair(s1, s1))
 TalkToSerialInstance = TalkToSerial(s1)
 PlayBackInstance = PlayBack(talkToSerial = TalkToSerialInstance)
 CommandsInstance = Commands(playBack = PlayBackInstance, talkToSerial = TalkToSerialInstance)
+CpuTempInstance = CpuTemp()
 
 GPIO.setmode(GPIO.BOARD)
 GPIO.setup(10, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
@@ -346,6 +358,7 @@ while True:
     print(line)
 
     CommandsInstance.onCommand(line)
+    CpuTempInstance.measure()
 
   if GPIO.input(10) == GPIO.HIGH:
     onPowerBtnClick(TalkToSerialInstance)
