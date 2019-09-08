@@ -34,7 +34,9 @@ NfcAdapter nfc = NfcAdapter(pn532_i2c);
 /* Uno's A4 to SDA & A5 to SCL */
 const int nfcDelay = 1000;
 String nfcCardId = "";
-int oldNfcCardPresent = 0;
+String nfcCardWifi = "";
+String nfcPtrTmp = "";
+bool oldNfcCardPresent = false;
 
 // HANDSHAKE CONFIRM
 bool handshake = false;
@@ -104,6 +106,7 @@ void loop(void) {
   }
   checkPlayButton();
   renderScreenState();
+  readSerial();
 }
 
 void setupVolumePot() {
@@ -150,6 +153,9 @@ void changeStatusLedColor(String color) {
 
 
 void readVolumePot(void) {
+  // This is a simple smoothing algo
+  // Change volumeSamplesCount to improve results
+  // I got just got a good potentiometer, and don't need it
   int newVolume = analogRead(volumePotPin);
   oldVolume = oldVolume - volumeSamples[volumeSamplerI];
   volumeSamples[volumeSamplerI] = newVolume;
@@ -164,6 +170,7 @@ void readVolumePot(void) {
   if (abs(oldVolumeAvg - volumeAvg) > 4) {
     oldVolumeAvg = volumeAvg;
     msgComputer("volume&" + String(volumeAvg));
+    screenText = "Volume: " + String(volumeAvg) + "%";
   }
 }
 
@@ -192,23 +199,65 @@ void onPlayButtonAction() {
 
 void scanNfc() {
   nfcCardId = "";
+  nfcCardWifi = "";
+  nfcPtrTmp = "";
   if (nfc.tagPresent(50)) {
     NfcTag tag = nfc.read();
     nfcCardId = tag.getUidString();
+
+    if (tag.hasNdefMessage())
+    {
+      NdefMessage message = tag.getNdefMessage();
+      int recordCount = message.getRecordCount();
+      for (int i = 0; i < recordCount; i++)
+      {
+        NdefRecord record = message.getRecord(i);
+
+        int payloadLength = record.getPayloadLength();
+        byte payload[payloadLength];
+        record.getPayload(payload);
+
+         // Processes the message as a string vs as a HEX value
+        String payloadAsString = "";
+        for (int c = 0; c < payloadLength; c++)
+        {
+          payloadAsString += (char)payload[c];
+        }
+
+         // Detect WI-FI
+        String strCopy = payloadAsString;
+        char delim[] = "&";
+        char *ptr = strtok(strCopy.c_str(), delim);
+
+        nfcPtrTmp = String(ptr);
+
+        // it's a wifi card!
+        if (nfcPtrTmp.equals("wifi")) {
+          nfcCardWifi = payloadAsString;
+          break;
+        }
+      }
+    }
   }
 
   if (nfcCardId == "") {
-    if (oldNfcCardPresent == 1) {
+    if (oldNfcCardPresent == true) {
       // card removed
-      oldNfcCardPresent = 0;
+      oldNfcCardPresent = false;
       msgComputer("button&clear");
     }
   } else {
-    if (oldNfcCardPresent == 0) {
+    if (oldNfcCardPresent == false) {
       // card deployed
-      oldNfcCardPresent = 1;
-      msgComputer(formatNfcCardId(nfcCardId));
-      drawText("Loading...");
+      oldNfcCardPresent = true;
+
+      if (nfcCardWifi.length() > 0) {
+        msgComputer(nfcCardWifi);
+        screenSys = "Setting Wi-Fi";
+      } else {
+        msgComputer(formatNfcCardId(nfcCardId));
+        screenText = "Loading...";
+      }
     }
   }
 }
@@ -219,10 +268,6 @@ String formatNfcCardId(String id) {
 
 void msgComputer(String data) {
   Serial.println(data + serialTerminator);
-}
-
-void serialEvent() {
-  readSerial();
 }
 
 void readSerial() {
@@ -263,7 +308,7 @@ void renderScreenState() {
 
   if (screenSys.length() > 0) {
     drawTextScroll(screenSys);
-  } else if (oldNfcCardPresent == 1) {
+  } else if (oldNfcCardPresent == true) {
     if (screenText.length() > 0) {
       drawText(screenText);
       textMillis = currentMillis;

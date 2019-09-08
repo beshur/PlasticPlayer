@@ -8,7 +8,6 @@
 # Dependencies:
 # - pyserial
 # - websocket-client
-# - wifi
 ###
 import serial
 import io
@@ -21,7 +20,6 @@ import json
 import pprint
 import RPi.GPIO as GPIO
 import time
-from wifi import Cell, Scheme
 
 SERIAL_PORT = "/dev/ttyUSB0"
 # ASCII End of Transmission Block
@@ -42,11 +40,6 @@ def onPowerBtnClick(talkToSerial):
 class WiFi(object):
     ssid = ""
     password = ""
-    schemeName = "wifiCard"
-    wlan = "wlan0"
-    errors = {
-      "NOT_FOUND": "not found"
-    }
 
     def __init__(self, ssid, password):
       print("WiFi\ns:" + ssid + " p:" + password + " start")
@@ -54,19 +47,24 @@ class WiFi(object):
       self.password = password
 
     def connect(self):
-      cell = Cell.where(self.wlan, lambda findCell: findCell.ssid.lower() == self.ssid.lower())[0]
-      if cell.ssid is None:
-        print "Wi-Fi not found: " + self.ssid
-        sendToSerial("error&wifi&" + self.errors.NOT_FOUND)
-        return
+      # Don't try to do this at home
+      file_in = "/etc/mopidy/mopidy.conf"
+      file_out = "mopidy_conf.tmp"
 
-      existingScheme = Scheme.find(self.wlan, self.schemeName)
-      if existingScheme:
-        existingScheme.delete()
-      passkey = self.password or None
-      scheme = Scheme.for_cell(self.wlan, self.schemeName, cell, passkey)
-      scheme.save()
-      scheme.activate()
+      os.spawnlp(os.P_WAIT, 'cp', 'cp', file_in, file_in + "_bak")
+
+      with open(file_in, "rt") as fin:
+        with open(file_out, "wt") as fout:
+          for line in fin:
+            if line.find('wifi_network') == 0:
+              fout.write('wifi_network = ' + self.ssid)
+            elif line.find('wifi_password') == 0:
+              fout.write('wifi_network = ' + self.password)
+            else:
+              fout.write(line)
+
+      os.rename(file_out, file_in)
+
 ###
 # Airtable provider
 ###
@@ -117,14 +115,14 @@ class PlayBack(object):
 
   def __init__(self, talkToSerial):
     print("PlayBack start")
-    self.listenTo = ["playback_state_changed", "stream_title_changed", "volume_changed"]
+    self.listenTo = ["playback_state_changed", "stream_title_changed"]
     self.talkToSerial = talkToSerial
     websocket.enableTrace(True)
     self.ws = websocket.WebSocketApp("ws://localhost:6680/mopidy/ws",
       on_message = self.on_message,
       on_error = self.on_error,
       on_close = self.on_close)
-    # self.ws.on_open = self.on_open
+    self.ws.on_open = self.on_open
 
     self.wst = threading.Thread(target=self.ws.run_forever)
     self.wst.daemon = True
@@ -134,16 +132,12 @@ class PlayBack(object):
   def playback_state_changed(self, data):
     state = data["new_state"]
     self.playing = True if state == "playing" else False
-    self.talkToSerial.send(getSerialType("text"), state)
+    if self.playing  != True:
+      self.talkToSerial.send(getSerialType("text"), state)
 
   def stream_title_changed(self, data):
     title = data["title"]
     self.talkToSerial.send(getSerialType("title"), title)
-
-  def volume_changed(self, data):
-    volume = data["volume"]
-    self.volume = volume
-    self.talkToSerial.send(getSerialType("text"), "Volume: " + str(volume))
 
   # websocket events
   def on_open(self, data):
@@ -236,7 +230,7 @@ class Commands(object):
     self.talkToSerial = talkToSerial
 
   def check(self, line, command):
-    if command == "button" or command == "volume":
+    if command == "button" or command == "volume" or command == "wifi":
       return True
 
     if line == self.previousLine:
@@ -264,7 +258,7 @@ class Commands(object):
   def wifi(self, args):
     print("wifi command detected, connecting to " + args[0])
     theWifi = WiFi(args[0], args[1])
-    theWifi.connect()
+    # theWifi.connect()
 
   def volume(self, args):
     volumeVal = args[0].replace('\n', '')
