@@ -327,12 +327,31 @@ def getSerialType(name):
   return types[name];
 
 class CpuTemp(object):
+  talkToSerial = {}
   temp = 0.0
+  timer = {}
   cmd = "vcgencmd measure_temp | egrep -o '[0-9]*\.[0-9]*' | tr -d '\n'"
 
+  def __init__(self, talkToSerial):
+    self.talkToSerial = talkToSerial
+
+  def start(self):
+    timer = threading.Timer(20.0, self.measure)
+    timer.start()
+
+  def stop(self):
+    timer.cancel()
+
   def measure(self):
-    self.temp = subprocess.check_output(self.cmd, shell=True)
-    print("CPU Temperature: " + self.temp)
+    self.temp = float(subprocess.check_output(self.cmd, shell=True))
+    print("CPU Temperature: " + str(self.temp))
+
+    if self.temp > 85:
+      print("CPU Temperature Overheat Shutdown")
+      onPowerBtnClick(self.talkToSerial)
+    elif self.temp > 80:
+      print("CPU Temperature near OverHeat")
+      self.talkToSerial.send(getSerialType("sys"), "Overheating")
 
     return self.temp
 
@@ -345,11 +364,12 @@ sio = io.TextIOWrapper(io.BufferedRWPair(s1, s1))
 TalkToSerialInstance = TalkToSerial(s1)
 PlayBackInstance = PlayBack(talkToSerial = TalkToSerialInstance)
 CommandsInstance = Commands(playBack = PlayBackInstance, talkToSerial = TalkToSerialInstance)
-CpuTempInstance = CpuTemp()
+CpuTempInstance = CpuTemp(talkToSerial = TalkToSerialInstance)
 
 GPIO.setmode(GPIO.BOARD)
 GPIO.setup(10, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
+CpuTempInstance.start()
 s1.flush()
 
 while True:
