@@ -141,7 +141,7 @@ class PlayBack(object):
     self.talkToSerial.send(getSerialType("title"), title)
 
   # websocket events
-  def on_open(self, data):
+  def on_open(data):
     print("ws on_open")
 
   def on_message(self, data):
