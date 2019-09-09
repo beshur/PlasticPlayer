@@ -47,6 +47,11 @@ unsigned long currentMillis;
 unsigned long textMillis;
 unsigned long titleTextMillis;
 
+// SERIAL
+// a String to hold incoming data
+String inputString = "";
+// whether the string is complete
+bool inputStringComplete = false;
 // SERIAL Terminator
 const char serialTerminator = 23;
 
@@ -73,10 +78,10 @@ void setup(void) {
   Serial.begin(115200);
   Serial.setTimeout(300);
   msgComputer("DI Player " + VERSION);
-  msgComputer("handshake&");
   setupStatusLed();
   setupButtons();
   setupVolumePot();
+  inputString.reserve(200);
   currentMillis = millis();
   nfcStartMillis = currentMillis;
   textMillis = currentMillis;
@@ -94,10 +99,15 @@ void setup(void) {
     setTextSettings();
     drawText("DI Player");
   }
+
+  msgComputer("handshake&");
 }
 
 void loop(void) {
   currentMillis = millis();
+  readAllSerial();
+  checkSerialInput();
+
   if (currentMillis - nfcStartMillis > nfcDelay) {
     nfcStartMillis = currentMillis;
     scanNfc();
@@ -106,7 +116,30 @@ void loop(void) {
   }
   checkPlayButton();
   renderScreenState();
-  readSerial();
+}
+
+void readAllSerial() {
+  while (Serial.available() > 0) {
+    // get the new byte:
+    char inChar = (char)Serial.read();
+    changeStatusLedColor("red");
+    // if the incoming character is a newline, set a flag so the main loop can
+    // do something about it:
+    if (inChar == serialTerminator) {
+      inputStringComplete = true;
+    } else {
+      // add it to the inputString:
+      inputString += inChar;
+    }
+  }
+}
+
+void checkSerialInput() {
+  if (inputStringComplete) {
+    parseMessage(inputString);
+    inputString = "";
+    inputStringComplete = false;
+  }
 }
 
 void setupVolumePot() {
@@ -271,12 +304,29 @@ void msgComputer(String data) {
 }
 
 void readSerial() {
-  String read = Serial.readStringUntil(serialTerminator);
+  String read = Serial.readString();
   String message = "";
-  String prefix = "";
+  String strCopy = read;
+  int init_size = strCopy.length();
 
+  char *ptr = strtok(strCopy.c_str(), serialTerminator);
+  for (byte i = 0; i++; i < init_size) {
+    message = String(ptr);
+    parseMessage(message);
+
+    ptr = strtok(NULL, serialTerminator);
+
+    if (ptr == NULL) {
+      break;
+    }
+  }
+}
+
+void parseMessage(String read) {
   // understand the received data
   int init_size = read.length();
+  String message = "";
+  String prefix = "";
   String strCopy = read;
   char delim[] = "&";
   if (init_size > 0) {
