@@ -76,7 +76,7 @@ int volumeSamples[volumeSamplesCount];
 
 void setup(void) {
   Serial.begin(115200);
-  Serial.setTimeout(300);
+  Serial.setTimeout(500);
   msgComputer("DI Player " + VERSION);
   setupStatusLed();
   setupButtons();
@@ -88,11 +88,11 @@ void setup(void) {
   titleTextMillis = currentMillis;
   nfc.begin();
 
-  msgComputer("NFC began");
+  // msgComputer("NFC began");
 
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3C for 128x32
-    msgComputer("error&SSD1306 allocation failed");
+    // msgComputer("error&SSD1306 allocation failed");
     changeStatusLedColor("red");
     for(;;); // Don't proceed, loop forever
   } else {
@@ -105,8 +105,8 @@ void setup(void) {
 
 void loop(void) {
   currentMillis = millis();
-  readAllSerial();
-  checkSerialInput();
+  // checkSerialInput();
+  readSerial();
 
   if (currentMillis - nfcStartMillis > nfcDelay) {
     nfcStartMillis = currentMillis;
@@ -118,20 +118,24 @@ void loop(void) {
   renderScreenState();
 }
 
-void readAllSerial() {
-  while (Serial.available() > 0) {
-    // get the new byte:
-    char inChar = (char)Serial.read();
-    changeStatusLedColor("red");
-    // if the incoming character is a newline, set a flag so the main loop can
-    // do something about it:
-    if (inChar == serialTerminator) {
-      inputStringComplete = true;
-    } else {
-      // add it to the inputString:
-      inputString += inChar;
-    }
-  }
+void serialEvent() {
+  // if (Serial.available() > 0) {
+  //   while (Serial.available()) {
+  //     // get the new byte:
+  //     char inChar = (char)Serial.read();
+  //     changeStatusLedColor("red");
+  //     // if the incoming character is a newline, set a flag so the main loop can
+  //     // do something about it:
+  //     if (inChar == -1) {
+  //       break;
+  //     } else if (inChar == serialTerminator) {
+  //       inputStringComplete = true;
+  //     } else {
+  //       // add it to the inputString:
+  //       inputString += inChar;
+  //     }
+  //   }
+  // }
 }
 
 void checkSerialInput() {
@@ -157,7 +161,8 @@ void setupStatusLed(void) {
 }
 
 void changeStatusLedColor(String color) {
-  int brightness = 50;
+  int brightness = 100;
+  int blueBrightness = 20;
   if (color.equals("green")) {
     // arduino ready
     analogWrite(statusLedR, 0);
@@ -167,7 +172,7 @@ void changeStatusLedColor(String color) {
     // handshake over serial
     analogWrite(statusLedR, brightness);
     analogWrite(statusLedG, brightness);
-    analogWrite(statusLedB, brightness);
+    analogWrite(statusLedB, blueBrightness);
   } else if (color.equals("yellow")) {
     // init
     analogWrite(statusLedR, brightness);
@@ -176,7 +181,7 @@ void changeStatusLedColor(String color) {
   } else if (color.equals("blue")) {
     analogWrite(statusLedR, 0);
     analogWrite(statusLedG, 0);
-    analogWrite(statusLedB, brightness);
+    analogWrite(statusLedB, blueBrightness);
   } else if (color.equals("red")) {
     analogWrite(statusLedR, brightness);
     analogWrite(statusLedG, 0);
@@ -301,6 +306,7 @@ String formatNfcCardId(String id) {
 
 void msgComputer(String data) {
   Serial.println(data + serialTerminator);
+  Serial.flush();
 }
 
 void readSerial() {
