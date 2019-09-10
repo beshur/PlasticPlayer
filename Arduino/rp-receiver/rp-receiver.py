@@ -32,12 +32,6 @@ SERIAL_TERMINATOR = str(chr(23))
 def sendToSerial(data):
   print("deprecated: Use TalkToSerial class", data)
 
-def onPowerBtnClick(talkToSerial):
-  print("Power button was pushed!")
-  talkToSerial.send(getSerialType("sys"), "Shutdown")
-  time.sleep(3)
-  os.system("poweroff")
-
 class WiFi(object):
     ssid = ""
     password = ""
@@ -112,11 +106,11 @@ class PlayBack(object):
   messageId = 0
   listenTo = []
   playing = False
-  volume = 0
+  volume = 30
 
   def __init__(self, talkToSerial):
     print("PlayBack start")
-    self.listenTo = ["playback_state_changed", "stream_title_changed"]
+    self.listenTo = ["playback_state_changed", "stream_title_changed", "volume_changed"]
     self.talkToSerial = talkToSerial
     websocket.enableTrace(True)
     self.ws = websocket.WebSocketApp("ws://localhost:6680/mopidy/ws",
@@ -130,15 +124,19 @@ class PlayBack(object):
     self.wst.start()
 
   # mopidy events
-  def playback_state_changed(self, data):
-    state = data["new_state"]
+  def playback_state_changed(self, event):
+    state = event["new_state"]
     self.playing = True if state == "playing" else False
     if self.playing  != True:
       self.talkToSerial.send(getSerialType("text"), state)
 
-  def stream_title_changed(self, data):
-    title = data["title"]
+  def stream_title_changed(self, event):
+    title = event["title"]
     self.talkToSerial.send(getSerialType("title"), title)
+
+  def volume_changed(self, event):
+    self.volume = event["volume"]
+    self.talkToSerial.send(getSerialType("text"), "Volume: " + str(self.volume) + "%")
 
   # websocket events
   def on_open(data):
@@ -204,9 +202,14 @@ class PlayBack(object):
     messages = [{"method":"core.playback.pause"}]
     self._send_messages(messages)
 
-  def setVolume(self, volumeVal):
-    print("setVolume", volumeVal)
-    messages = [{"method":"core.mixer.set_volume", "params":{"volume": volumeVal}}]
+  def setVolume(self, up):
+    print("setVolume", str(self.volume))
+    if up == True:
+      newVolume = min(self.volume + 5, 100)
+    else:
+      newVolume = max(self.volume - 5, 0)
+
+    messages = [{"method":"core.mixer.set_volume", "params":{"volume": newVolume}}]
     self._send_messages(messages)
 
   def clear(self):
@@ -217,8 +220,6 @@ class PlayBack(object):
 
   def close(self):
     self.ws.close()
-    self.wst.stop()
-
 
 class Commands(object):
   previousLine = ""
@@ -263,7 +264,7 @@ class Commands(object):
 
   def volume(self, args):
     volumeVal = args[0].replace('\n', '')
-    self.playBack.setVolume(int(volumeVal))
+    # self.playBack.setVolume(int(volumeVal))
 
   # play card to start track lookup
   def play(self, args):
@@ -336,11 +337,12 @@ class CpuTemp(object):
     self.talkToSerial = talkToSerial
 
   def start(self):
-    timer = threading.Timer(20.0, self.measure)
-    timer.start()
+    self.timer = threading.Timer(20.0, self.measure)
+    self.timer.daemon = True
+    self.timer.start()
 
   def stop(self):
-    timer.cancel()
+    self.timer.cancel()
 
   def measure(self):
     self.temp = float(subprocess.check_output(self.cmd, shell=True))
@@ -355,6 +357,95 @@ class CpuTemp(object):
 
     return self.temp
 
+class BoardInputs(object):
+  pwrBtn = 10
+  playBtn = 8
+  encoderClk = 12
+  encoderDt = 11
+  clkLastState = -9999
+  encoderDirection = False
+  encoderOnce = False
+
+  encoderThread = {}
+  pwrBtnThread = {}
+  talkToSerial = {}
+  playBack = {}
+
+  def __init__(self, talkToSerial, playBack):
+    print "BoardInputs Start"
+
+    self.talkToSerial = talkToSerial
+    self.playBack = playBack
+
+    GPIO.setmode(GPIO.BOARD)
+    GPIO.setup(self.pwrBtn, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+    GPIO.setup(self.encoderClk, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(self.encoderDt, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+    self.clkLastState = GPIO.input(self.encoderClk)
+
+    self.encoderThread = threading.Thread(target=self.listenLoop)
+    self.encoderThread.daemon = True
+    self.encoderThread.start()
+
+    GPIO.add_event_detect(self.pwrBtn, GPIO.RISING, callback=self.onPowerBtnClick)
+
+  def listenLoop(self):
+    while True:
+      self.listen()
+      time.sleep(0.01)
+
+  def listen(self):
+    self.onEncoder()
+
+  def pwrBtnListen(self):
+    print("pwr ", str(GPIO.input(self.pwrBtn)))
+    if GPIO.input(self.pwrBtn) == GPIO.HIGH:
+      self.onPowerBtnClick()
+
+  def onEncoder(self):
+    clkState = GPIO.input(self.encoderClk)
+    if clkState != self.clkLastState:
+      if self.encoderOnce == True:
+        self.encoderOnce = False
+        self.clkLastState = clkState
+        return;
+
+      self.encoderOnce = True
+
+      dtState = GPIO.input(self.encoderDt)
+      if dtState != clkState:
+        self.encoderDirection = True
+      else:
+        self.encoderDirection = False
+
+      print("Encoder rolled!", self.encoderDirection)
+      self.playBack.setVolume(self.encoderDirection)
+    self.clkLastState = clkState
+
+  def onPowerBtnClick(self, channel):
+    print("Power button was pushed!")
+    self.talkToSerial.send(getSerialType("sys"), "Shutdown")
+    time.sleep(3)
+    shutdown()
+
+  def stop(self):
+    GPIO.remove_event_detect(self.pwrBtn)
+
+
+def shutdown():
+  try:
+    onExit()
+  finally:
+    os.system("poweroff")
+
+def onExit():
+  CpuTempInstance.stop()
+  BoardInputsInstance.stop()
+  PlayBackInstance.close()
+  s1.close()
+  GPIO.cleanup()
+
 ###
 # Runtime
 ###
@@ -365,20 +456,19 @@ TalkToSerialInstance = TalkToSerial(s1)
 PlayBackInstance = PlayBack(talkToSerial = TalkToSerialInstance)
 CommandsInstance = Commands(playBack = PlayBackInstance, talkToSerial = TalkToSerialInstance)
 CpuTempInstance = CpuTemp(talkToSerial = TalkToSerialInstance)
-
-GPIO.setmode(GPIO.BOARD)
-GPIO.setup(10, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+BoardInputsInstance = BoardInputs(talkToSerial = TalkToSerialInstance, playBack = PlayBackInstance)
 
 CpuTempInstance.start()
 s1.flush()
 
-while True:
-  if s1.inWaiting() > 0:
-    line = sio.readline()
-    print(line)
+try:
+  while True:
+    if s1.inWaiting() > 0:
+      line = sio.readline()
+      print(line)
 
-    CommandsInstance.onCommand(line)
-    CpuTempInstance.measure()
+      CommandsInstance.onCommand(line)
+      CpuTempInstance.measure()
 
-  if GPIO.input(10) == GPIO.HIGH:
-    onPowerBtnClick(TalkToSerialInstance)
+except KeyboardInterrupt:
+  onExit()

@@ -102,7 +102,7 @@ void loop(void) {
     nfcStartMillis = currentMillis;
     scanNfc();
   } else {
-    readVolumePot();
+    // readVolumePot();
   }
   checkPlayButton();
   renderScreenState();
