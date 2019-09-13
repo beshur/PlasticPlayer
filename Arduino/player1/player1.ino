@@ -256,7 +256,7 @@ void scanNfc() {
         screenSys = "Setting Wi-Fi";
       } else {
         msgComputer(formatNfcCardId(nfcCardId));
-        screenText = "Loading...";
+        screenTitle = nfcCardId;
       }
     }
   }
