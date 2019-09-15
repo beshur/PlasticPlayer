@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>NFC Card Database</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <h1>NFC Card Database</h1>
+    <p>Add/Edit NFC card ids and add corresponding track URLs</p>
+    <div class="messages"></div>
+
+    <form>
+
+      <table class="cards">
+        <thead>
+          <tr>
+            <td></td>
+            <td>NFC Card ID*</td>
+            <td>Stream Link*</td>
+            <td>Description</td>
+          </tr>
+        </thead>
+
+        <tbody></tbody>
+      </table>
+
+      <div class="controls">
+        <button id="addRow">Add Row</button>
+        <button id="save">Save</button>
+      </div>
+
+    </form>
+  </div>
+  <script type="text/javascript" src="./index.js"></script>
+</body>
+</html>
