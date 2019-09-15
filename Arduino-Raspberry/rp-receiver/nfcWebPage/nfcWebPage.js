@@ -78,6 +78,7 @@ class AppView {
 
     this.onAdd = this.onAdd.bind(this);
     this.onSave = this.onSave.bind(this);
+    this.onError = this.onError.bind(this);
 
     this.el.addEventListener('click', (e) => {
       if(e.target) {
@@ -89,6 +90,8 @@ class AppView {
         }
       }
     });
+
+    document.addEventListener('customError', this.onError);
 
     this.el.querySelector('#addRow').addEventListener('click', this.onAdd);
 
